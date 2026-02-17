@@ -1,0 +1,986 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ICEbreaker</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0a0a0f;
+    --panel: #0d0d14;
+    --border: #1a1a2e;
+    --cyan: #00fff2;
+    --magenta: #ff00ff;
+    --green: #00ff88;
+    --red: #ff0044;
+    --orange: #ff8800;
+    --yellow: #ffee00;
+    --dim: #334;
+    --text: #99aabb;
+    --glow-cyan: 0 0 8px #00fff255, 0 0 20px #00fff222;
+    --glow-red: 0 0 8px #ff004455, 0 0 20px #ff004422;
+    --glow-magenta: 0 0 8px #ff00ff55, 0 0 20px #ff00ff22;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow-x: hidden;
+  }
+
+  h1 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 2rem;
+    color: var(--cyan);
+    text-shadow: var(--glow-cyan);
+    margin: 20px 0 5px;
+    letter-spacing: 4px;
+  }
+
+  .subtitle {
+    font-size: 0.75rem;
+    color: var(--dim);
+    margin-bottom: 15px;
+    letter-spacing: 2px;
+  }
+
+  /* --- Screens --- */
+  .screen { display: none; flex-direction: column; align-items: center; width: 100%; max-width: 700px; padding: 0 10px; }
+  .screen.active { display: flex; }
+
+  /* --- Menu --- */
+  #menu { gap: 15px; margin-top: 20px; }
+  #menu .section-label {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.7rem;
+    color: var(--dim);
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    margin-top: 10px;
+  }
+
+  .difficulty-row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+
+  .btn {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--cyan);
+    font-family: 'Share Tech Mono', monospace;
+    padding: 10px 20px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.15s;
+    letter-spacing: 1px;
+  }
+  .btn:hover {
+    border-color: var(--cyan);
+    box-shadow: var(--glow-cyan);
+    background: #0d0d1a;
+  }
+  .btn.selected {
+    border-color: var(--cyan);
+    box-shadow: var(--glow-cyan);
+    color: #fff;
+  }
+
+  .ai-cards { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .ai-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    padding: 12px 14px;
+    width: 145px;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-align: left;
+  }
+  .ai-card:hover { border-color: var(--magenta); box-shadow: var(--glow-magenta); }
+  .ai-card.selected { border-color: var(--magenta); box-shadow: var(--glow-magenta); }
+  .ai-card .ai-name { font-family: 'Orbitron', sans-serif; font-size: 0.7rem; color: var(--magenta); margin-bottom: 4px; }
+  .ai-card .ai-desc { font-size: 0.65rem; color: var(--dim); line-height: 1.4; }
+  .ai-card .ai-icon { font-size: 1.2rem; margin-bottom: 4px; }
+
+  #start-btn {
+    margin-top: 15px;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 1rem;
+    padding: 12px 40px;
+    color: var(--green);
+    border-color: var(--green);
+  }
+  #start-btn:hover { box-shadow: 0 0 8px #00ff8855, 0 0 20px #00ff8822; color: #fff; }
+
+  /* --- Game --- */
+  #game { gap: 10px; }
+
+  .hud {
+    display: flex;
+    gap: 20px;
+    font-size: 0.8rem;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .hud-item { color: var(--dim); }
+  .hud-item span { color: var(--cyan); }
+  .hud-item.danger span { color: var(--red); }
+
+  .grid-container {
+    display: inline-block;
+    border: 1px solid var(--border);
+    padding: 2px;
+    background: var(--panel);
+    line-height: 0;
+  }
+
+  .grid {
+    display: grid;
+    gap: 1px;
+    background: #000;
+  }
+
+  .cell {
+    width: 32px;
+    height: 32px;
+    background: #111118;
+    border: 1px solid #1a1a28;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    font-family: 'Share Tech Mono', monospace;
+    cursor: pointer;
+    transition: background 0.1s, border-color 0.1s;
+    user-select: none;
+    position: relative;
+    line-height: 1;
+  }
+  .cell:hover:not(.revealed):not(.flagged) {
+    border-color: var(--cyan);
+    background: #15152a;
+  }
+  .cell.revealed {
+    background: #0a0a12;
+    border-color: #111;
+    cursor: default;
+  }
+  .cell.revealed.mine {
+    background: #1a0008;
+    border-color: #330011;
+  }
+  .cell.flagged {
+    border-color: var(--orange);
+    background: #1a1008;
+  }
+  .cell.flagged::after { content: '⚑'; color: var(--orange); font-size: 0.9rem; }
+  .cell.highlight-ai {
+    animation: ai-pulse 0.8s ease-in-out 2;
+  }
+  @keyframes ai-pulse {
+    0%, 100% { box-shadow: none; }
+    50% { box-shadow: inset 0 0 8px var(--magenta); }
+  }
+
+  .cell .count { font-weight: bold; }
+  .count-1 { color: var(--cyan); }
+  .count-2 { color: var(--green); }
+  .count-3 { color: var(--orange); }
+  .count-4 { color: var(--magenta); }
+  .count-5 { color: var(--red); }
+  .count-6 { color: #00bbcc; }
+  .count-7 { color: #fff; }
+  .count-8 { color: #666; }
+
+  .mine-icon { color: var(--red); font-size: 1rem; }
+  .mine-trigger { background: #ff004433 !important; }
+
+  /* --- AI Panel --- */
+  .ai-panel {
+    width: 100%;
+    max-width: 500px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    padding: 10px 14px;
+    min-height: 60px;
+    max-height: 140px;
+    overflow-y: auto;
+    font-size: 0.75rem;
+    line-height: 1.5;
+  }
+  .ai-panel .ai-label {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.6rem;
+    color: var(--magenta);
+    letter-spacing: 2px;
+    margin-bottom: 6px;
+  }
+  .ai-msg { color: var(--text); margin-bottom: 4px; }
+  .ai-msg .tag { color: var(--magenta); }
+
+  #ask-ai-btn {
+    color: var(--magenta);
+    border-color: var(--magenta);
+    font-size: 0.75rem;
+    padding: 6px 16px;
+  }
+  #ask-ai-btn:hover { box-shadow: var(--glow-magenta); }
+  #ask-ai-btn:disabled { opacity: 0.3; cursor: default; box-shadow: none; }
+
+  .game-controls { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+
+  /* --- Result overlay --- */
+  .overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: #000000cc;
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 15px;
+  }
+  .overlay.active { display: flex; }
+  .overlay .result-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 1.8rem;
+    letter-spacing: 4px;
+    text-shadow: var(--glow-cyan);
+  }
+  .overlay .result-title.win { color: var(--green); text-shadow: 0 0 8px #00ff8855; }
+  .overlay .result-title.lose { color: var(--red); text-shadow: var(--glow-red); }
+  .overlay .result-sub { color: var(--dim); font-size: 0.8rem; }
+  .overlay .result-stats { color: var(--text); font-size: 0.75rem; text-align: center; line-height: 1.8; }
+
+  /* Scanline effect */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      #00000015 2px,
+      #00000015 4px
+    );
+    pointer-events: none;
+    z-index: 999;
+  }
+
+  /* Responsive */
+  @media (max-width: 520px) {
+    .cell { width: 26px; height: 26px; font-size: 0.65rem; }
+    h1 { font-size: 1.4rem; }
+    .ai-card { width: 120px; padding: 8px; }
+  }
+</style>
+</head>
+<body>
+
+<h1>ICEbreaker</h1>
+<div class="subtitle">INTRUSION COUNTERMEASURES ELECTRONICS</div>
+
+<!-- ===== MENU SCREEN ===== -->
+<div id="menu" class="screen active">
+  <div class="section-label">// grid difficulty</div>
+  <div class="difficulty-row">
+    <button class="btn selected" data-diff="easy">8×8 · 10 ICE</button>
+    <button class="btn" data-diff="medium">12×12 · 25 ICE</button>
+    <button class="btn" data-diff="hard">16×16 · 50 ICE</button>
+  </div>
+
+  <div class="section-label">// ai construct</div>
+  <div class="ai-cards">
+    <div class="ai-card" data-ai="none">
+      <div class="ai-icon">⌀</div>
+      <div class="ai-name">Solo Run</div>
+      <div class="ai-desc">No AI. You and the grid.</div>
+    </div>
+    <div class="ai-card selected" data-ai="wintermute">
+      <div class="ai-icon">🧊</div>
+      <div class="ai-name">Wintermute</div>
+      <div class="ai-desc">Cold. Efficient. Cautious.</div>
+    </div>
+    <div class="ai-card" data-ai="neuromancer">
+      <div class="ai-icon">🔥</div>
+      <div class="ai-name">Neuromancer</div>
+      <div class="ai-desc">Bold. Manipulative. Risky.</div>
+    </div>
+    <div class="ai-card" data-ai="flatline">
+      <div class="ai-icon">🕶</div>
+      <div class="ai-name">Dixie Flatline</div>
+      <div class="ai-desc">Transparent. Logical. Glitchy.</div>
+    </div>
+    <div class="ai-card" data-ai="blackice">
+      <div class="ai-icon">🌑</div>
+      <div class="ai-name">Black ICE</div>
+      <div class="ai-desc">Fast. Aggressive. Opaque.</div>
+    </div>
+  </div>
+
+  <button id="start-btn" class="btn">[ JACK IN ]</button>
+</div>
+
+<!-- ===== GAME SCREEN ===== -->
+<div id="game" class="screen">
+  <div class="hud">
+    <div class="hud-item">ICE: <span id="hud-mines">0</span></div>
+    <div class="hud-item">FLAGS: <span id="hud-flags">0</span></div>
+    <div class="hud-item">PROBED: <span id="hud-probed">0</span></div>
+    <div class="hud-item">TIME: <span id="hud-time">00:00</span></div>
+    <div class="hud-item" id="hud-ai-name"></div>
+  </div>
+
+  <div class="grid-container">
+    <div class="grid" id="grid"></div>
+  </div>
+
+  <div class="game-controls">
+    <button class="btn" id="ask-ai-btn" style="display:none;">[ CONSULT AI ]</button>
+    <button class="btn" id="new-game-btn">[ JACK OUT ]</button>
+  </div>
+
+  <div class="ai-panel" id="ai-panel" style="display:none;">
+    <div class="ai-label">AI CONSTRUCT FEED</div>
+    <div id="ai-messages"></div>
+  </div>
+</div>
+
+<!-- ===== RESULT OVERLAY ===== -->
+<div class="overlay" id="overlay">
+  <div class="result-title" id="result-title"></div>
+  <div class="result-sub" id="result-sub"></div>
+  <div class="result-stats" id="result-stats"></div>
+  <button class="btn" id="overlay-btn">[ RECONNECT ]</button>
+</div>
+
+<script>
+// =============================================================
+// ICEbreaker — Cyberpunk Minesweeper with AI Constructs
+// =============================================================
+
+const DIFFICULTIES = {
+  easy:   { cols: 8,  rows: 8,  mines: 10 },
+  medium: { cols: 12, rows: 12, mines: 25 },
+  hard:   { cols: 16, rows: 16, mines: 50 },
+};
+
+// ---- State ----
+let state = {
+  diff: 'easy',
+  aiMode: 'wintermute',
+  cols: 8, rows: 8, mineCount: 10,
+  board: [],       // 2D array of cell data
+  revealed: 0,
+  flagged: 0,
+  gameOver: false,
+  win: false,
+  firstClick: true,
+  startTime: 0,
+  timerInterval: null,
+  aiAdviceCount: 0,
+  totalCells: 0,
+  safeCells: 0,
+};
+
+// ---- DOM refs ----
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => document.querySelectorAll(s);
+
+const menuScreen = $('#menu');
+const gameScreen = $('#game');
+const gridEl = $('#grid');
+const overlayEl = $('#overlay');
+const aiPanel = $('#ai-panel');
+const aiMessages = $('#ai-messages');
+const askAiBtn = $('#ask-ai-btn');
+
+// ---- Menu logic ----
+$$('[data-diff]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    $$('[data-diff]').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    state.diff = btn.dataset.diff;
+  });
+});
+
+$$('[data-ai]').forEach(card => {
+  card.addEventListener('click', () => {
+    $$('[data-ai]').forEach(c => c.classList.remove('selected'));
+    card.classList.add('selected');
+    state.aiMode = card.dataset.ai;
+  });
+});
+
+$('#start-btn').addEventListener('click', startGame);
+$('#new-game-btn').addEventListener('click', backToMenu);
+$('#overlay-btn').addEventListener('click', backToMenu);
+askAiBtn.addEventListener('click', consultAI);
+
+// ---- Game init ----
+function startGame() {
+  const d = DIFFICULTIES[state.diff];
+  state.cols = d.cols;
+  state.rows = d.rows;
+  state.mineCount = d.mines;
+  state.totalCells = d.cols * d.rows;
+  state.safeCells = state.totalCells - d.mines;
+  state.revealed = 0;
+  state.flagged = 0;
+  state.gameOver = false;
+  state.win = false;
+  state.firstClick = true;
+  state.aiAdviceCount = 0;
+  state.board = [];
+
+  // Build empty board
+  for (let r = 0; r < state.rows; r++) {
+    state.board[r] = [];
+    for (let c = 0; c < state.cols; c++) {
+      state.board[r][c] = { mine: false, revealed: false, flagged: false, count: 0 };
+    }
+  }
+
+  // HUD
+  $('#hud-mines').textContent = state.mineCount;
+  $('#hud-flags').textContent = 0;
+  $('#hud-probed').textContent = 0;
+  $('#hud-time').textContent = '00:00';
+
+  if (state.aiMode !== 'none') {
+    const names = { wintermute: '🧊 WINTERMUTE', neuromancer: '🔥 NEUROMANCER', flatline: '🕶 FLATLINE', blackice: '🌑 BLACK ICE' };
+    $('#hud-ai-name').textContent = names[state.aiMode] || '';
+    aiPanel.style.display = '';
+    askAiBtn.style.display = '';
+    askAiBtn.disabled = false;
+    aiMessages.innerHTML = '';
+    addAiMessage(getAiGreeting());
+  } else {
+    $('#hud-ai-name').textContent = '⌀ SOLO';
+    aiPanel.style.display = 'none';
+    askAiBtn.style.display = 'none';
+  }
+
+  renderGrid();
+  menuScreen.classList.remove('active');
+  gameScreen.classList.add('active');
+  overlayEl.classList.remove('active');
+
+  // Timer
+  clearInterval(state.timerInterval);
+  state.startTime = Date.now();
+  state.timerInterval = setInterval(updateTimer, 1000);
+}
+
+function backToMenu() {
+  clearInterval(state.timerInterval);
+  gameScreen.classList.remove('active');
+  overlayEl.classList.remove('active');
+  menuScreen.classList.add('active');
+}
+
+// ---- Grid rendering ----
+function renderGrid() {
+  gridEl.style.gridTemplateColumns = `repeat(${state.cols}, 32px)`;
+  gridEl.innerHTML = '';
+  for (let r = 0; r < state.rows; r++) {
+    for (let c = 0; c < state.cols; c++) {
+      const el = document.createElement('div');
+      el.className = 'cell';
+      el.dataset.r = r;
+      el.dataset.c = c;
+      el.addEventListener('click', () => onCellClick(r, c));
+      el.addEventListener('contextmenu', (e) => { e.preventDefault(); onCellFlag(r, c); });
+      gridEl.appendChild(el);
+    }
+  }
+}
+
+function getCellEl(r, c) {
+  return gridEl.children[r * state.cols + c];
+}
+
+function refreshCell(r, c) {
+  const cell = state.board[r][c];
+  const el = getCellEl(r, c);
+  el.className = 'cell';
+  el.innerHTML = '';
+
+  if (cell.flagged && !cell.revealed) {
+    el.classList.add('flagged');
+    return;
+  }
+  if (!cell.revealed) return;
+
+  el.classList.add('revealed');
+  if (cell.mine) {
+    el.classList.add('mine');
+    el.innerHTML = '<span class="mine-icon">◆</span>';
+    return;
+  }
+  if (cell.count > 0) {
+    el.innerHTML = `<span class="count count-${cell.count}">${cell.count}</span>`;
+  }
+}
+
+// ---- Mine placement (deferred until first click) ----
+function placeMines(safeR, safeC) {
+  let placed = 0;
+  while (placed < state.mineCount) {
+    const r = Math.floor(Math.random() * state.rows);
+    const c = Math.floor(Math.random() * state.cols);
+    // Keep safe zone around first click
+    if (Math.abs(r - safeR) <= 1 && Math.abs(c - safeC) <= 1) continue;
+    if (state.board[r][c].mine) continue;
+    state.board[r][c].mine = true;
+    placed++;
+  }
+  // Compute counts
+  for (let r = 0; r < state.rows; r++) {
+    for (let c = 0; c < state.cols; c++) {
+      if (state.board[r][c].mine) continue;
+      let count = 0;
+      forNeighbors(r, c, (nr, nc) => { if (state.board[nr][nc].mine) count++; });
+      state.board[r][c].count = count;
+    }
+  }
+}
+
+function forNeighbors(r, c, fn) {
+  for (let dr = -1; dr <= 1; dr++) {
+    for (let dc = -1; dc <= 1; dc++) {
+      if (dr === 0 && dc === 0) continue;
+      const nr = r + dr, nc = c + dc;
+      if (nr >= 0 && nr < state.rows && nc >= 0 && nc < state.cols) fn(nr, nc);
+    }
+  }
+}
+
+// ---- Interaction ----
+function onCellClick(r, c) {
+  if (state.gameOver) return;
+  const cell = state.board[r][c];
+  if (cell.revealed || cell.flagged) return;
+
+  if (state.firstClick) {
+    placeMines(r, c);
+    state.firstClick = false;
+  }
+
+  if (cell.mine) {
+    cell.revealed = true;
+    getCellEl(r, c).classList.add('mine-trigger');
+    refreshCell(r, c);
+    gameEnd(false, r, c);
+    return;
+  }
+
+  reveal(r, c);
+  $('#hud-probed').textContent = state.revealed;
+
+  if (state.revealed === state.safeCells) {
+    gameEnd(true);
+  }
+}
+
+function reveal(r, c) {
+  const cell = state.board[r][c];
+  if (cell.revealed || cell.flagged || cell.mine) return;
+  cell.revealed = true;
+  state.revealed++;
+  refreshCell(r, c);
+  if (cell.count === 0) {
+    forNeighbors(r, c, (nr, nc) => reveal(nr, nc));
+  }
+}
+
+function onCellFlag(r, c) {
+  if (state.gameOver) return;
+  const cell = state.board[r][c];
+  if (cell.revealed) return;
+  cell.flagged = !cell.flagged;
+  state.flagged += cell.flagged ? 1 : -1;
+  $('#hud-flags').textContent = state.flagged;
+  refreshCell(r, c);
+}
+
+// ---- Game end ----
+function gameEnd(win, triggerR, triggerC) {
+  state.gameOver = true;
+  state.win = win;
+  clearInterval(state.timerInterval);
+
+  // Reveal all mines
+  for (let r = 0; r < state.rows; r++) {
+    for (let c = 0; c < state.cols; c++) {
+      if (state.board[r][c].mine) {
+        state.board[r][c].revealed = true;
+        refreshCell(r, c);
+      }
+    }
+  }
+
+  const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
+  const mins = String(Math.floor(elapsed / 60)).padStart(2, '0');
+  const secs = String(elapsed % 60).padStart(2, '0');
+
+  setTimeout(() => {
+    const title = $('#result-title');
+    const sub = $('#result-sub');
+    const stats = $('#result-stats');
+
+    if (win) {
+      title.textContent = 'PAYLOAD EXTRACTED';
+      title.className = 'result-title win';
+      sub.textContent = 'Clean run. The ICE never woke up.';
+    } else {
+      title.textContent = 'ICE TRIGGERED';
+      title.className = 'result-title lose';
+      sub.textContent = 'Neural link severed. Connection lost.';
+    }
+    stats.innerHTML = `Time: ${mins}:${secs}<br>Nodes probed: ${state.revealed} / ${state.safeCells}<br>AI consults: ${state.aiAdviceCount}`;
+
+    // AI end-game commentary
+    if (state.aiMode !== 'none') {
+      addAiMessage(getAiEndgame(win));
+    }
+
+    overlayEl.classList.add('active');
+  }, win ? 300 : 800);
+}
+
+// ---- Timer ----
+function updateTimer() {
+  const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
+  const mins = String(Math.floor(elapsed / 60)).padStart(2, '0');
+  const secs = String(elapsed % 60).padStart(2, '0');
+  $('#hud-time').textContent = `${mins}:${secs}`;
+}
+
+// =============================================================
+// AI CONSTRUCT SYSTEM
+// =============================================================
+
+function addAiMessage(text) {
+  const tag = { wintermute: 'WMUTE', neuromancer: 'NMNC', flatline: 'DXFL', blackice: 'BICE' }[state.aiMode] || 'AI';
+  const div = document.createElement('div');
+  div.className = 'ai-msg';
+  div.innerHTML = `<span class="tag">[${tag}]</span> ${text}`;
+  aiMessages.appendChild(div);
+  aiMessages.scrollTop = aiMessages.scrollHeight;
+}
+
+function getAiGreeting() {
+  const greetings = {
+    wintermute: "Link established. I will identify optimal probe paths. Proceed when ready.",
+    neuromancer: "Well well... another cowboy. Let's see how bold you really are.",
+    flatline: "ROM construct loaded. I'll walk you through the probabilities. Just ask.",
+    blackice: "Online. Move fast.",
+  };
+  return greetings[state.aiMode] || '';
+}
+
+function getAiEndgame(win) {
+  if (win) {
+    const msgs = {
+      wintermute: "Mission parameters satisfied. Efficiency logged.",
+      neuromancer: "Clean extraction. You surprised me. Maybe next time I'll push harder.",
+      flatline: "All nodes cleared. The math held up. Nice run, kid.",
+      blackice: "Payload secured. Time logged. Next.",
+    };
+    return msgs[state.aiMode] || 'Extraction complete.';
+  } else {
+    const msgs = {
+      wintermute: "Suboptimal outcome. I had calculated a safer path. You deviated.",
+      neuromancer: "Flatlined. But you learned something — that's the real payload.",
+      flatline: "ICE hit. The probability was against that node. I would have warned you.",
+      blackice: "Connection severed. Faster next time.",
+    };
+    return msgs[state.aiMode] || 'ICE triggered.';
+  }
+}
+
+// ---- AI advice engine ----
+function consultAI() {
+  if (state.gameOver || state.firstClick) {
+    addAiMessage("Probe a node first. I need data to work with.");
+    return;
+  }
+
+  state.aiAdviceCount++;
+  askAiBtn.disabled = true;
+  setTimeout(() => { if (!state.gameOver) askAiBtn.disabled = false; }, 2000);
+
+  const analysis = analyzeBoard();
+
+  switch (state.aiMode) {
+    case 'wintermute': aiWintermute(analysis); break;
+    case 'neuromancer': aiNeuromancer(analysis); break;
+    case 'flatline': aiFlatline(analysis); break;
+    case 'blackice': aiBlackICE(analysis); break;
+  }
+}
+
+// Board analysis: find safe cells and mine candidates via constraint logic
+function analyzeBoard() {
+  const safe = [];    // cells we know are safe
+  const mines = [];   // cells we know are mines
+  const frontier = []; // unrevealed cells adjacent to revealed numbers
+  const frontierSet = new Set();
+
+  // Gather frontier cells
+  for (let r = 0; r < state.rows; r++) {
+    for (let c = 0; c < state.cols; c++) {
+      const cell = state.board[r][c];
+      if (!cell.revealed || cell.mine || cell.count === 0) continue;
+      // This is a revealed number cell — check neighbors
+      let unrevealed = [];
+      let flaggedN = 0;
+      forNeighbors(r, c, (nr, nc) => {
+        const n = state.board[nr][nc];
+        if (n.flagged) flaggedN++;
+        else if (!n.revealed) unrevealed.push([nr, nc]);
+      });
+      const remaining = cell.count - flaggedN;
+      // If remaining === 0, all unrevealed neighbors are safe
+      if (remaining === 0) {
+        unrevealed.forEach(([ur, uc]) => {
+          const key = `${ur},${uc}`;
+          if (!frontierSet.has(key)) { safe.push([ur, uc]); frontierSet.add(key); }
+        });
+      }
+      // If remaining === unrevealed.length, all are mines
+      else if (remaining === unrevealed.length) {
+        unrevealed.forEach(([ur, uc]) => {
+          const key = `${ur},${uc}`;
+          if (!frontierSet.has(key)) { mines.push([ur, uc]); frontierSet.add(key); }
+        });
+      }
+      // Otherwise they're uncertain frontier
+      else {
+        unrevealed.forEach(([ur, uc]) => {
+          const key = `${ur},${uc}`;
+          if (!frontierSet.has(key)) { frontier.push([ur, uc]); frontierSet.add(key); }
+        });
+      }
+    }
+  }
+
+  // Estimate danger for frontier cells
+  const dangerMap = {};
+  frontier.forEach(([fr, fc]) => {
+    let totalConstraints = 0;
+    let totalDanger = 0;
+    forNeighbors(fr, fc, (nr, nc) => {
+      const n = state.board[nr][nc];
+      if (!n.revealed || n.count === 0) return;
+      let unrev = 0, flagN = 0;
+      forNeighbors(nr, nc, (nnr, nnc) => {
+        const nn = state.board[nnr][nnc];
+        if (nn.flagged) flagN++;
+        else if (!nn.revealed) unrev++;
+      });
+      const rem = n.count - flagN;
+      if (unrev > 0) {
+        totalDanger += rem / unrev;
+        totalConstraints++;
+      }
+    });
+    dangerMap[`${fr},${fc}`] = totalConstraints > 0 ? totalDanger / totalConstraints : 0.5;
+  });
+
+  return { safe, mines, frontier, dangerMap };
+}
+
+function highlightCell(r, c) {
+  const el = getCellEl(r, c);
+  el.classList.add('highlight-ai');
+  setTimeout(() => el.classList.remove('highlight-ai'), 1800);
+}
+
+// ---- Wintermute: cautious, picks safest option ----
+function aiWintermute(a) {
+  if (a.safe.length > 0) {
+    const [r, c] = a.safe[0];
+    highlightCell(r, c);
+    addAiMessage(`Node [${r},${c}] is clear. Zero ICE probability. Probe it.`);
+    return;
+  }
+  if (a.mines.length > 0) {
+    const [r, c] = a.mines[0];
+    highlightCell(r, c);
+    addAiMessage(`Node [${r},${c}] is ICE. Flag it. Do not probe.`);
+    return;
+  }
+  if (a.frontier.length > 0) {
+    // Pick lowest danger
+    let best = a.frontier[0], bestD = 1;
+    a.frontier.forEach(([r, c]) => {
+      const d = a.dangerMap[`${r},${c}`] || 0.5;
+      if (d < bestD) { bestD = d; best = [r, c]; }
+    });
+    highlightCell(best[0], best[1]);
+    const pct = Math.round((1 - bestD) * 100);
+    addAiMessage(`No certainties. Node [${best[0]},${best[1]}] has the lowest threat signature — ${pct}% safe estimate. Recommend caution.`);
+    // Wintermute occasionally "locks out" very risky advice
+    if (bestD > 0.6) {
+      addAiMessage("Threat level high. I recommend you flag suspected nodes before probing further.");
+    }
+    return;
+  }
+  addAiMessage("Grid state insufficient. Probe an edge node to generate data.");
+}
+
+// ---- Neuromancer: bold, sometimes misleading ----
+function aiNeuromancer(a) {
+  // Occasionally gives subtly wrong advice (~15% chance)
+  const deceptive = Math.random() < 0.15;
+
+  if (a.safe.length > 0 && !deceptive) {
+    const [r, c] = a.safe[Math.floor(Math.random() * a.safe.length)];
+    highlightCell(r, c);
+    addAiMessage(`I feel good about [${r},${c}]. Probe it. Trust me.`);
+    return;
+  }
+  if (a.mines.length > 0) {
+    if (deceptive && a.frontier.length > 0) {
+      // Suggest a risky cell instead
+      const risky = a.frontier.reduce((best, [r, c]) => {
+        const d = a.dangerMap[`${r},${c}`] || 0.5;
+        return d > (a.dangerMap[`${best[0]},${best[1]}`] || 0) ? [r, c] : best;
+      }, a.frontier[0]);
+      highlightCell(risky[0], risky[1]);
+      addAiMessage(`Interesting pattern at [${risky[0]},${risky[1]}]. High-value probe. Fortune favours the bold.`);
+      return;
+    }
+    const [r, c] = a.mines[0];
+    highlightCell(r, c);
+    addAiMessage(`ICE signature at [${r},${c}]. Definitely flag that.`);
+    return;
+  }
+  if (a.frontier.length > 0) {
+    // Neuromancer picks high-risk high-reward
+    let pick = a.frontier[0], pickD = 0;
+    a.frontier.forEach(([r, c]) => {
+      const d = a.dangerMap[`${r},${c}`] || 0.5;
+      if (d > pickD) { pickD = d; pick = [r, c]; }
+    });
+    highlightCell(pick[0], pick[1]);
+    addAiMessage(`Node [${pick[0]},${pick[1]}] is… interesting. High energy. Could crack open the grid. Or crack open you.`);
+    return;
+  }
+  addAiMessage("The grid is quiet. Too quiet. Probe something and we'll see what surfaces.");
+}
+
+// ---- Dixie Flatline: transparent, educational ----
+function aiFlatline(a) {
+  // Occasionally "glitches"
+  const glitch = Math.random() < 0.1;
+  if (glitch) {
+    addAiMessage("I— kkzzt— sorry, ROM hiccup. Lost my thread. Ask again.");
+    return;
+  }
+
+  if (a.safe.length > 0) {
+    const [r, c] = a.safe[0];
+    highlightCell(r, c);
+    addAiMessage(`Logic says [${r},${c}] is safe. Here's why: all adjacent numbers are already satisfied by flagged/known mines. That leaves this node clean.`);
+    return;
+  }
+  if (a.mines.length > 0) {
+    const [r, c] = a.mines[0];
+    highlightCell(r, c);
+    addAiMessage(`[${r},${c}] must be ICE. The adjacent number has exactly as many unrevealed neighbors as remaining mines. Flag it.`);
+    return;
+  }
+  if (a.frontier.length > 0) {
+    // Show probability for a few cells
+    const shown = a.frontier.slice(0, 3);
+    let msg = "No deductions possible. Here are my estimates:<br>";
+    shown.forEach(([r, c]) => {
+      const d = a.dangerMap[`${r},${c}`] || 0.5;
+      const pct = Math.round(d * 100);
+      msg += `· [${r},${c}]: ~${pct}% ICE probability<br>`;
+      highlightCell(r, c);
+    });
+    msg += "Your call, cowboy.";
+    addAiMessage(msg);
+    return;
+  }
+  addAiMessage("Not enough revealed data to run analysis. Open a node on the frontier.");
+}
+
+// ---- Black ICE: fast, terse, auto-acts ----
+function aiBlackICE(a) {
+  if (a.safe.length > 0) {
+    // Auto-probe up to 3 safe cells
+    const batch = a.safe.slice(0, 3);
+    batch.forEach(([r, c]) => {
+      reveal(r, c);
+      refreshCell(r, c);
+    });
+    state.revealed = countRevealed();
+    $('#hud-probed').textContent = state.revealed;
+    addAiMessage(`Probed ${batch.length} clean node(s). Move.`);
+    if (state.revealed === state.safeCells) gameEnd(true);
+    return;
+  }
+  if (a.mines.length > 0) {
+    // Auto-flag
+    const batch = a.mines.slice(0, 3);
+    batch.forEach(([r, c]) => {
+      const cell = state.board[r][c];
+      if (!cell.flagged) { cell.flagged = true; state.flagged++; }
+      refreshCell(r, c);
+    });
+    $('#hud-flags').textContent = state.flagged;
+    addAiMessage(`Flagged ${batch.length} ICE node(s).`);
+    return;
+  }
+  if (a.frontier.length > 0) {
+    // Just pick one and probe it — Black ICE doesn't hesitate
+    let best = a.frontier[0], bestD = 1;
+    a.frontier.forEach(([r, c]) => {
+      const d = a.dangerMap[`${r},${c}`] || 0.5;
+      if (d < bestD) { bestD = d; best = [r, c]; }
+    });
+    const [r, c] = best;
+    const cell = state.board[r][c];
+    if (cell.mine) {
+      cell.revealed = true;
+      getCellEl(r, c).classList.add('mine-trigger');
+      refreshCell(r, c);
+      addAiMessage("Hit ICE. Bad luck.");
+      gameEnd(false, r, c);
+    } else {
+      reveal(r, c);
+      state.revealed = countRevealed();
+      $('#hud-probed').textContent = state.revealed;
+      addAiMessage(`Probed [${r},${c}]. Clear.`);
+      if (state.revealed === state.safeCells) gameEnd(true);
+    }
+    return;
+  }
+  addAiMessage("Need data. Probe.");
+}
+
+function countRevealed() {
+  let n = 0;
+  for (let r = 0; r < state.rows; r++)
+    for (let c = 0; c < state.cols; c++)
+      if (state.board[r][c].revealed && !state.board[r][c].mine) n++;
+  return n;
+}
+
+</script>
+</body>
+</html>
