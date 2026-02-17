@@ -210,7 +210,7 @@
     border: 1px solid var(--border);
     padding: 10px 14px;
     min-height: 60px;
-    max-height: 140px;
+    max-height: 200px;
     overflow-y: auto;
     font-size: 0.75rem;
     line-height: 1.5;
@@ -224,6 +224,28 @@
   }
   .ai-msg { color: var(--text); margin-bottom: 4px; }
   .ai-msg .tag { color: var(--magenta); }
+  .ai-msg .cell-ref {
+    color: var(--cyan);
+    cursor: pointer;
+    border-bottom: 1px dotted var(--cyan);
+    transition: color 0.15s, text-shadow 0.15s;
+  }
+  .ai-msg .cell-ref:hover {
+    color: #fff;
+    text-shadow: 0 0 6px var(--cyan);
+  }
+  .cell.highlight-ref {
+    border-color: var(--cyan) !important;
+    box-shadow: inset 0 0 10px var(--cyan), 0 0 6px var(--cyan);
+    z-index: 2;
+  }
+  .ai-msg b {
+    color: var(--green);
+    font-weight: normal;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.6rem;
+    letter-spacing: 1px;
+  }
 
   #ask-ai-btn {
     color: var(--magenta);
@@ -318,7 +340,7 @@
     <div class="ai-card" data-ai="flatline">
       <div class="ai-icon">🕶</div>
       <div class="ai-name">Dixie Flatline</div>
-      <div class="ai-desc">Transparent. Logical. Glitchy.</div>
+      <div class="ai-desc">Tutor. Teaches you to read the grid.</div>
     </div>
     <div class="ai-card" data-ai="blackice">
       <div class="ai-icon">🌑</div>
@@ -672,9 +694,29 @@ function updateTimer() {
 
 function addAiMessage(text) {
   const tag = { wintermute: 'WMUTE', neuromancer: 'NMNC', flatline: 'DXFL', blackice: 'BICE' }[state.aiMode] || 'AI';
+  // Replace [r,c] references with interactive spans
+  const parsed = text.replace(/\[(\d+),(\d+)\]/g, (match, r, c) => {
+    return `<span class="cell-ref" data-ref-r="${r}" data-ref-c="${c}">[${r},${c}]</span>`;
+  });
   const div = document.createElement('div');
   div.className = 'ai-msg';
-  div.innerHTML = `<span class="tag">[${tag}]</span> ${text}`;
+  div.innerHTML = `<span class="tag">[${tag}]</span> ${parsed}`;
+  // Wire up cell reference hover/click events
+  div.querySelectorAll('.cell-ref').forEach(ref => {
+    const r = parseInt(ref.dataset.refR);
+    const c = parseInt(ref.dataset.refC);
+    ref.addEventListener('mouseenter', () => {
+      const el = getCellEl(r, c);
+      if (el) el.classList.add('highlight-ref');
+    });
+    ref.addEventListener('mouseleave', () => {
+      const el = getCellEl(r, c);
+      if (el) el.classList.remove('highlight-ref');
+    });
+    ref.addEventListener('click', () => {
+      highlightCell(r, c);
+    });
+  });
   aiMessages.appendChild(div);
   aiMessages.scrollTop = aiMessages.scrollHeight;
 }
@@ -683,7 +725,7 @@ function getAiGreeting() {
   const greetings = {
     wintermute: "Link established. I will identify optimal probe paths. Proceed when ready.",
     neuromancer: "Well well... another cowboy. Let's see how bold you really are.",
-    flatline: "ROM construct loaded. I'll walk you through the probabilities. Just ask.",
+    flatline: "ROM construct loaded. I'm here to teach, not just advise. Ask me and I'll show you how to read the grid yourself.",
     blackice: "Online. Move fast.",
   };
   return greetings[state.aiMode] || '';
@@ -694,7 +736,7 @@ function getAiEndgame(win) {
     const msgs = {
       wintermute: "Mission parameters satisfied. Efficiency logged.",
       neuromancer: "Clean extraction. You surprised me. Maybe next time I'll push harder.",
-      flatline: "All nodes cleared. The math held up. Nice run, kid.",
+      flatline: "All nodes cleared. You're starting to read the grid on your own. That's the real payload.",
       blackice: "Payload secured. Time logged. Next.",
     };
     return msgs[state.aiMode] || 'Extraction complete.';
@@ -702,7 +744,7 @@ function getAiEndgame(win) {
     const msgs = {
       wintermute: "Suboptimal outcome. I had calculated a safer path. You deviated.",
       neuromancer: "Flatlined. But you learned something — that's the real payload.",
-      flatline: "ICE hit. The probability was against that node. I would have warned you.",
+      flatline: "ICE hit. Let's learn from it — look at the numbers around that node. The clues were there. You'll see them next time.",
       blackice: "Connection severed. Faster next time.",
     };
     return msgs[state.aiMode] || 'ICE triggered.';
@@ -881,42 +923,85 @@ function aiNeuromancer(a) {
   addAiMessage("The grid is quiet. Too quiet. Probe something and we'll see what surfaces.");
 }
 
-// ---- Dixie Flatline: transparent, educational ----
+// ---- Dixie Flatline: tutor, teaches grid-reading ----
 function aiFlatline(a) {
-  // Occasionally "glitches"
-  const glitch = Math.random() < 0.1;
-  if (glitch) {
-    addAiMessage("I— kkzzt— sorry, ROM hiccup. Lost my thread. Ask again.");
-    return;
-  }
-
   if (a.safe.length > 0) {
     const [r, c] = a.safe[0];
     highlightCell(r, c);
-    addAiMessage(`Logic says [${r},${c}] is safe. Here's why: all adjacent numbers are already satisfied by flagged/known mines. That leaves this node clean.`);
+    // Find a neighboring number cell that proves it's safe, and explain why
+    let explanation = '';
+    forNeighbors(r, c, (nr, nc) => {
+      if (explanation) return;
+      const n = state.board[nr][nc];
+      if (!n.revealed || n.count === 0) return;
+      let flaggedN = 0;
+      forNeighbors(nr, nc, (nnr, nnc) => { if (state.board[nnr][nnc].flagged) flaggedN++; });
+      if (n.count === flaggedN) {
+        explanation = `<b>Lesson — Satisfied Numbers:</b> Look at the "${n.count}" on [${nr},${nc}]. It touches ${n.count} flagged/known ICE node(s). That means ALL its other neighbors must be safe. So [${r},${c}] is clean — probe it.`;
+      }
+    });
+    if (!explanation) {
+      explanation = `<b>Lesson:</b> [${r},${c}] is safe. Every number next to it already accounts for all its ICE. When a number's mine count is fully satisfied by flags, all remaining neighbors are safe to probe.`;
+    }
+    addAiMessage(explanation);
+    // Tip rotation based on advice count
+    if (state.aiAdviceCount <= 2) {
+      addAiMessage("<b>Tip:</b> A number tells you exactly how many of its 8 neighbors are ICE. Once you've flagged that many, the rest are safe.");
+    }
     return;
   }
   if (a.mines.length > 0) {
     const [r, c] = a.mines[0];
     highlightCell(r, c);
-    addAiMessage(`[${r},${c}] must be ICE. The adjacent number has exactly as many unrevealed neighbors as remaining mines. Flag it.`);
+    // Find the number cell that proves it's a mine
+    let explanation = '';
+    forNeighbors(r, c, (nr, nc) => {
+      if (explanation) return;
+      const n = state.board[nr][nc];
+      if (!n.revealed || n.count === 0) return;
+      let flaggedN = 0, unrevN = 0;
+      forNeighbors(nr, nc, (nnr, nnc) => {
+        const nn = state.board[nnr][nnc];
+        if (nn.flagged) flaggedN++;
+        else if (!nn.revealed) unrevN++;
+      });
+      const remaining = n.count - flaggedN;
+      if (remaining === unrevN) {
+        explanation = `<b>Lesson — Forced Mines:</b> The "${n.count}" at [${nr},${nc}] still needs ${remaining} more ICE, and it has exactly ${unrevN} unrevealed neighbor(s). That means ALL of them must be ICE — including [${r},${c}]. Flag it.`;
+      }
+    });
+    if (!explanation) {
+      explanation = `<b>Lesson:</b> [${r},${c}] is definitely ICE. When a number's remaining mine count equals its unrevealed neighbor count, every one of those neighbors is a mine. Right-click to flag it.`;
+    }
+    addAiMessage(explanation);
+    if (state.aiAdviceCount <= 3) {
+      addAiMessage("<b>Tip:</b> Right-click a node to flag it as ICE. Flagging helps you track what you know and unlocks further deductions on neighboring numbers.");
+    }
     return;
   }
   if (a.frontier.length > 0) {
-    // Show probability for a few cells
+    // Teach probability reasoning
     const shown = a.frontier.slice(0, 3);
-    let msg = "No deductions possible. Here are my estimates:<br>";
+    let msg = "<b>Lesson — No Guarantees (Probability):</b> Right now, no cell can be proven safe or ICE. When that happens, you estimate risk.<br>";
+    msg += "Each number constrains its neighbors. I check how many mines remain vs. how many unknowns each number touches:<br>";
     shown.forEach(([r, c]) => {
       const d = a.dangerMap[`${r},${c}`] || 0.5;
       const pct = Math.round(d * 100);
-      msg += `· [${r},${c}]: ~${pct}% ICE probability<br>`;
       highlightCell(r, c);
+      msg += `· [${r},${c}]: ~${pct}% chance of ICE<br>`;
     });
-    msg += "Your call, cowboy.";
+    // Recommend the safest
+    let best = a.frontier[0], bestD = 1;
+    a.frontier.forEach(([r, c]) => {
+      const d = a.dangerMap[`${r},${c}`] || 0.5;
+      if (d < bestD) { bestD = d; best = [r, c]; }
+    });
+    const safePct = Math.round((1 - bestD) * 100);
+    msg += `<b>Best bet:</b> [${best[0]},${best[1]}] at ~${safePct}% safe. In uncertain situations, always pick the lowest-risk node.`;
     addAiMessage(msg);
     return;
   }
-  addAiMessage("Not enough revealed data to run analysis. Open a node on the frontier.");
+  addAiMessage("<b>Tip:</b> Not enough revealed nodes for analysis. Try probing along edges or corners — they touch fewer neighbors, so they're less likely to hit ICE and they open up deduction chains.");
 }
 
 // ---- Black ICE: fast, terse, auto-acts ----
