@@ -132,6 +132,15 @@
   .hud-item { color: var(--dim); }
   .hud-item span { color: var(--cyan); }
   .hud-item.danger span { color: var(--red); }
+  .hud-item.score-item span { color: var(--green); font-family: 'Orbitron', sans-serif; }
+  .hud-item.timer-warning span {
+    color: var(--red) !important;
+    animation: timer-flash 0.5s ease-in-out infinite;
+  }
+  @keyframes timer-flash {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
 
   .grid-container {
     display: inline-block;
@@ -201,6 +210,25 @@
 
   .mine-icon { color: var(--red); font-size: 1rem; }
   .mine-trigger { background: #ff004433 !important; }
+
+  /* --- Score popup --- */
+  .score-popup {
+    position: fixed;
+    top: 40%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-family: 'Orbitron', sans-serif;
+    font-size: 2rem;
+    z-index: 50;
+    pointer-events: none;
+    animation: score-pop 0.8s ease-out forwards;
+  }
+  .score-popup.positive { color: var(--green); text-shadow: 0 0 12px #00ff8855; }
+  .score-popup.negative { color: var(--red); text-shadow: var(--glow-red); }
+  @keyframes score-pop {
+    0% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+    100% { opacity: 0; transform: translate(-50%, -80%) scale(1.5); }
+  }
 
   /* --- AI Panel --- */
   .ai-panel {
@@ -281,6 +309,13 @@
   .overlay .result-title.lose { color: var(--red); text-shadow: var(--glow-red); }
   .overlay .result-sub { color: var(--dim); font-size: 0.8rem; }
   .overlay .result-stats { color: var(--text); font-size: 0.75rem; text-align: center; line-height: 1.8; }
+  .overlay .final-score {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 2.5rem;
+    color: var(--cyan);
+    text-shadow: var(--glow-cyan);
+    letter-spacing: 2px;
+  }
 
   /* Scanline effect */
   body::after {
@@ -355,10 +390,12 @@
 <!-- ===== GAME SCREEN ===== -->
 <div id="game" class="screen">
   <div class="hud">
+    <div class="hud-item score-item">SCORE: <span id="hud-score">0</span></div>
+    <div class="hud-item">ROUND: <span id="hud-round">1</span></div>
+    <div class="hud-item" id="hud-timer-item">TIME: <span id="hud-time">1:00</span></div>
     <div class="hud-item">ICE: <span id="hud-mines">0</span></div>
     <div class="hud-item">FLAGS: <span id="hud-flags">0</span></div>
     <div class="hud-item">PROBED: <span id="hud-probed">0</span></div>
-    <div class="hud-item">TIME: <span id="hud-time">00:00</span></div>
     <div class="hud-item" id="hud-ai-name"></div>
   </div>
 
@@ -381,13 +418,14 @@
 <div class="overlay" id="overlay">
   <div class="result-title" id="result-title"></div>
   <div class="result-sub" id="result-sub"></div>
+  <div class="final-score" id="final-score"></div>
   <div class="result-stats" id="result-stats"></div>
-  <button class="btn" id="overlay-btn">[ RECONNECT ]</button>
+  <button class="btn" id="overlay-btn">[ JACK OUT ]</button>
 </div>
 
 <script>
 // =============================================================
-// ICEbreaker — Cyberpunk Minesweeper with AI Constructs
+// ICEbreaker — Cyberpunk Minesweeper with Timed Scoring
 // =============================================================
 
 const DIFFICULTIES = {
@@ -395,6 +433,15 @@ const DIFFICULTIES = {
   medium: { cols: 12, rows: 12, mines: 25 },
   hard:   { cols: 16, rows: 16, mines: 50 },
 };
+
+const SCORING = {
+  probeNode:   10,   // per safe node revealed
+  correctFlag: 20,   // flagging an actual mine
+  hitBomb:     25,   // penalty for clicking a mine
+  clearGrid:  100,   // bonus for clearing all safe nodes
+};
+
+const SESSION_TIME = 60; // seconds
 
 // ---- State ----
 let state = {
@@ -405,13 +452,19 @@ let state = {
   revealed: 0,
   flagged: 0,
   gameOver: false,
-  win: false,
   firstClick: true,
-  startTime: 0,
   timerInterval: null,
   aiAdviceCount: 0,
   totalCells: 0,
   safeCells: 0,
+  // Timed scoring
+  score: 0,
+  round: 0,
+  timeRemaining: SESSION_TIME,
+  transitioning: false,
+  gridsCleared: 0,
+  totalProbed: 0,
+  bombsHit: 0,
 };
 
 // ---- DOM refs ----
@@ -448,7 +501,7 @@ $('#new-game-btn').addEventListener('click', backToMenu);
 $('#overlay-btn').addEventListener('click', backToMenu);
 askAiBtn.addEventListener('click', consultAI);
 
-// ---- Game init ----
+// ---- Game init (starts a timed session) ----
 function startGame() {
   const d = DIFFICULTIES[state.diff];
   state.cols = d.cols;
@@ -456,27 +509,22 @@ function startGame() {
   state.mineCount = d.mines;
   state.totalCells = d.cols * d.rows;
   state.safeCells = state.totalCells - d.mines;
-  state.revealed = 0;
-  state.flagged = 0;
-  state.gameOver = false;
-  state.win = false;
-  state.firstClick = true;
-  state.aiAdviceCount = 0;
-  state.board = [];
 
-  // Build empty board
-  for (let r = 0; r < state.rows; r++) {
-    state.board[r] = [];
-    for (let c = 0; c < state.cols; c++) {
-      state.board[r][c] = { mine: false, revealed: false, flagged: false, count: 0 };
-    }
-  }
+  // Reset session state
+  state.score = 0;
+  state.round = 0;
+  state.gameOver = false;
+  state.transitioning = false;
+  state.gridsCleared = 0;
+  state.totalProbed = 0;
+  state.bombsHit = 0;
+  state.aiAdviceCount = 0;
+  state.timeRemaining = SESSION_TIME;
 
   // HUD
-  $('#hud-mines').textContent = state.mineCount;
-  $('#hud-flags').textContent = 0;
-  $('#hud-probed').textContent = 0;
-  $('#hud-time').textContent = '00:00';
+  updateScoreDisplay();
+  $('#hud-time').textContent = formatTime(SESSION_TIME);
+  $('#hud-timer-item').classList.remove('timer-warning');
 
   if (state.aiMode !== 'none') {
     const names = { wintermute: '🧊 WINTERMUTE', neuromancer: '🔥 NEUROMANCER', flatline: '🕶 FLATLINE', blackice: '🌑 BLACK ICE' };
@@ -492,15 +540,48 @@ function startGame() {
     askAiBtn.style.display = 'none';
   }
 
-  renderGrid();
   menuScreen.classList.remove('active');
   gameScreen.classList.add('active');
   overlayEl.classList.remove('active');
 
-  // Timer
+  // Start countdown timer
   clearInterval(state.timerInterval);
-  state.startTime = Date.now();
-  state.timerInterval = setInterval(updateTimer, 1000);
+  state.timerInterval = setInterval(tickTimer, 1000);
+
+  // Start first round
+  startRound();
+}
+
+// ---- Start a new round (new grid, keep score and timer) ----
+function startRound() {
+  state.round++;
+  state.revealed = 0;
+  state.flagged = 0;
+  state.firstClick = true;
+  state.transitioning = false;
+  state.board = [];
+
+  // Build empty board
+  for (let r = 0; r < state.rows; r++) {
+    state.board[r] = [];
+    for (let c = 0; c < state.cols; c++) {
+      state.board[r][c] = { mine: false, revealed: false, flagged: false, count: 0, flagScored: false };
+    }
+  }
+
+  // Update HUD
+  $('#hud-round').textContent = state.round;
+  $('#hud-mines').textContent = state.mineCount;
+  $('#hud-flags').textContent = 0;
+  $('#hud-probed').textContent = 0;
+
+  renderGrid();
+
+  // AI round message (not on first round — greeting already shown)
+  if (state.aiMode !== 'none' && state.round > 1) {
+    aiMessages.innerHTML = '';
+    addAiMessage(`Grid ${state.round} loaded. Keep moving.`);
+  }
 }
 
 function backToMenu() {
@@ -589,7 +670,7 @@ function forNeighbors(r, c, fn) {
 
 // ---- Interaction ----
 function onCellClick(r, c) {
-  if (state.gameOver) return;
+  if (state.gameOver || state.transitioning) return;
   const cell = state.board[r][c];
   if (cell.revealed || cell.flagged) return;
 
@@ -602,15 +683,22 @@ function onCellClick(r, c) {
     cell.revealed = true;
     getCellEl(r, c).classList.add('mine-trigger');
     refreshCell(r, c);
-    gameEnd(false, r, c);
+    handleBombHit();
     return;
   }
 
+  const beforeRevealed = state.revealed;
   reveal(r, c);
+  const nodesProbed = state.revealed - beforeRevealed;
+  const pointsGained = nodesProbed * SCORING.probeNode;
+  state.score += pointsGained;
+  state.totalProbed += nodesProbed;
+  updateScoreDisplay();
   $('#hud-probed').textContent = state.revealed;
+  if (pointsGained > 0) showScorePopup(pointsGained);
 
   if (state.revealed === state.safeCells) {
-    gameEnd(true);
+    handleGridClear();
   }
 }
 
@@ -626,66 +714,129 @@ function reveal(r, c) {
 }
 
 function onCellFlag(r, c) {
-  if (state.gameOver) return;
+  if (state.gameOver || state.transitioning) return;
   const cell = state.board[r][c];
   if (cell.revealed) return;
   cell.flagged = !cell.flagged;
   state.flagged += cell.flagged ? 1 : -1;
   $('#hud-flags').textContent = state.flagged;
   refreshCell(r, c);
+
+  // Award points for correctly flagging a mine (only once per cell, only after mines placed)
+  if (!state.firstClick && cell.mine && cell.flagged && !cell.flagScored) {
+    cell.flagScored = true;
+    state.score += SCORING.correctFlag;
+    updateScoreDisplay();
+  }
 }
 
-// ---- Game end ----
-function gameEnd(win, triggerR, triggerC) {
-  state.gameOver = true;
-  state.win = win;
-  clearInterval(state.timerInterval);
+// ---- Bomb hit: deduct points, start new round ----
+function handleBombHit() {
+  state.bombsHit++;
+  state.score -= SCORING.hitBomb;
+  state.transitioning = true;
+  updateScoreDisplay();
+  showScorePopup(-SCORING.hitBomb);
 
-  // Reveal all mines
-  for (let r = 0; r < state.rows; r++) {
-    for (let c = 0; c < state.cols; c++) {
-      if (state.board[r][c].mine) {
-        state.board[r][c].revealed = true;
-        refreshCell(r, c);
-      }
-    }
+  // Briefly show the mine, then start a new round
+  setTimeout(() => {
+    if (state.gameOver) return;
+    startRound();
+  }, 700);
+}
+
+// ---- Grid cleared: bonus points, start new round ----
+function handleGridClear() {
+  state.gridsCleared++;
+  state.score += SCORING.clearGrid;
+  state.transitioning = true;
+  updateScoreDisplay();
+  showScorePopup(SCORING.clearGrid, 'CLEARED');
+
+  setTimeout(() => {
+    if (state.gameOver) return;
+    startRound();
+  }, 700);
+}
+
+// ---- Timer (countdown) ----
+function tickTimer() {
+  state.timeRemaining--;
+  updateTimerDisplay();
+  if (state.timeRemaining <= 0) {
+    timeUp();
   }
+}
 
-  const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
-  const mins = String(Math.floor(elapsed / 60)).padStart(2, '0');
-  const secs = String(elapsed % 60).padStart(2, '0');
+function updateTimerDisplay() {
+  const t = Math.max(0, state.timeRemaining);
+  $('#hud-time').textContent = formatTime(t);
+
+  // Flash warning when time is low
+  if (t <= 10) {
+    $('#hud-timer-item').classList.add('timer-warning');
+  } else {
+    $('#hud-timer-item').classList.remove('timer-warning');
+  }
+}
+
+function formatTime(secs) {
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+// ---- Time's up: show final results ----
+function timeUp() {
+  state.gameOver = true;
+  state.transitioning = false;
+  clearInterval(state.timerInterval);
+  $('#hud-time').textContent = '0:00';
+  $('#hud-timer-item').classList.add('timer-warning');
 
   setTimeout(() => {
     const title = $('#result-title');
     const sub = $('#result-sub');
     const stats = $('#result-stats');
+    const finalScore = $('#final-score');
 
-    if (win) {
-      title.textContent = 'PAYLOAD EXTRACTED';
-      title.className = 'result-title win';
-      sub.textContent = 'Clean run. The ICE never woke up.';
-    } else {
-      title.textContent = 'ICE TRIGGERED';
-      title.className = 'result-title lose';
-      sub.textContent = 'Neural link severed. Connection lost.';
-    }
-    stats.innerHTML = `Time: ${mins}:${secs}<br>Nodes probed: ${state.revealed} / ${state.safeCells}<br>AI consults: ${state.aiAdviceCount}`;
+    title.textContent = 'SESSION COMPLETE';
+    title.className = 'result-title';
+    sub.textContent = "Time's up, cowboy.";
+    finalScore.textContent = state.score;
+    stats.innerHTML = [
+      `Grids cleared: ${state.gridsCleared}`,
+      `Rounds played: ${state.round}`,
+      `Nodes probed: ${state.totalProbed}`,
+      `Bombs hit: ${state.bombsHit}`,
+      `AI consults: ${state.aiAdviceCount}`,
+    ].join('<br>');
 
-    // AI end-game commentary
+    // AI end-of-session commentary
     if (state.aiMode !== 'none') {
-      addAiMessage(getAiEndgame(win));
+      addAiMessage(getAiTimedEndgame());
     }
 
     overlayEl.classList.add('active');
-  }, win ? 300 : 800);
+  }, 500);
 }
 
-// ---- Timer ----
-function updateTimer() {
-  const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
-  const mins = String(Math.floor(elapsed / 60)).padStart(2, '0');
-  const secs = String(elapsed % 60).padStart(2, '0');
-  $('#hud-time').textContent = `${mins}:${secs}`;
+// ---- Score helpers ----
+function updateScoreDisplay() {
+  $('#hud-score').textContent = state.score;
+}
+
+function showScorePopup(amount, label) {
+  // Remove any existing popup
+  const existing = document.querySelector('.score-popup');
+  if (existing) existing.remove();
+
+  const el = document.createElement('div');
+  el.className = 'score-popup ' + (amount >= 0 ? 'positive' : 'negative');
+  const sign = amount >= 0 ? '+' : '';
+  el.textContent = label ? `${label} ${sign}${amount}` : `${sign}${amount}`;
+  document.body.appendChild(el);
+  el.addEventListener('animationend', () => el.remove());
 }
 
 // =============================================================
@@ -723,37 +874,36 @@ function addAiMessage(text) {
 
 function getAiGreeting() {
   const greetings = {
-    wintermute: "Link established. I will identify optimal probe paths. Proceed when ready.",
-    neuromancer: "Well well... another cowboy. Let's see how bold you really are.",
-    flatline: "ROM construct loaded. I'm here to teach, not just advise. Ask me and I'll show you how to read the grid yourself.",
-    blackice: "Online. Move fast.",
+    wintermute: "Link established. 60-second window. Probe fast, flag smart. I'll optimize your path.",
+    neuromancer: "Well well... another cowboy on the clock. Let's see how bold you really are.",
+    flatline: "ROM construct loaded. You've got 60 seconds — ask me and I'll show you how to read the grid. Speed comes from understanding.",
+    blackice: "Online. 60 seconds. Move.",
   };
   return greetings[state.aiMode] || '';
 }
 
-function getAiEndgame(win) {
-  if (win) {
-    const msgs = {
-      wintermute: "Mission parameters satisfied. Efficiency logged.",
-      neuromancer: "Clean extraction. You surprised me. Maybe next time I'll push harder.",
-      flatline: "All nodes cleared. You're starting to read the grid on your own. That's the real payload.",
-      blackice: "Payload secured. Time logged. Next.",
-    };
-    return msgs[state.aiMode] || 'Extraction complete.';
-  } else {
-    const msgs = {
-      wintermute: "Suboptimal outcome. I had calculated a safer path. You deviated.",
-      neuromancer: "Flatlined. But you learned something — that's the real payload.",
-      flatline: "ICE hit. Let's learn from it — look at the numbers around that node. The clues were there. You'll see them next time.",
-      blackice: "Connection severed. Faster next time.",
-    };
-    return msgs[state.aiMode] || 'ICE triggered.';
-  }
+function getAiTimedEndgame() {
+  const s = state.score;
+  const msgs = {
+    wintermute: s > 500 ? "Efficient run. Performance metrics exceed baseline." :
+                s > 200 ? "Adequate extraction rate. Room for optimization." :
+                "Suboptimal metrics. Recalibrate your approach.",
+    neuromancer: s > 500 ? "Impressive. You almost kept up with me. Almost." :
+                 s > 200 ? "Not bad for a console cowboy. Not great either." :
+                 "That was painful to watch. Let's go again.",
+    flatline: s > 500 ? "Now that's reading the grid under pressure. You've learned well." :
+              s > 200 ? "Decent run. Remember: flag to deduce, probe with purpose. Speed follows." :
+              "Every run teaches you something. Focus on the number patterns next time.",
+    blackice: s > 500 ? "Fast. Logged." :
+              s > 200 ? "Acceptable." :
+              "Slow. Again.",
+  };
+  return msgs[state.aiMode] || 'Session ended.';
 }
 
 // ---- AI advice engine ----
 function consultAI() {
-  if (state.gameOver || state.firstClick) {
+  if (state.gameOver || state.transitioning || state.firstClick) {
     addAiMessage("Probe a node first. I need data to work with.");
     return;
   }
@@ -845,8 +995,10 @@ function analyzeBoard() {
 
 function highlightCell(r, c) {
   const el = getCellEl(r, c);
-  el.classList.add('highlight-ai');
-  setTimeout(() => el.classList.remove('highlight-ai'), 1800);
+  if (el) {
+    el.classList.add('highlight-ai');
+    setTimeout(() => el.classList.remove('highlight-ai'), 1800);
+  }
 }
 
 // ---- Wintermute: cautious, picks safest option ----
@@ -1009,14 +1161,20 @@ function aiBlackICE(a) {
   if (a.safe.length > 0) {
     // Auto-probe up to 3 safe cells
     const batch = a.safe.slice(0, 3);
+    const beforeRevealed = state.revealed;
     batch.forEach(([r, c]) => {
       reveal(r, c);
       refreshCell(r, c);
     });
     state.revealed = countRevealed();
+    const nodesProbed = state.revealed - beforeRevealed;
+    state.score += nodesProbed * SCORING.probeNode;
+    state.totalProbed += nodesProbed;
+    updateScoreDisplay();
     $('#hud-probed').textContent = state.revealed;
     addAiMessage(`Probed ${batch.length} clean node(s). Move.`);
-    if (state.revealed === state.safeCells) gameEnd(true);
+    if (nodesProbed > 0) showScorePopup(nodesProbed * SCORING.probeNode);
+    if (state.revealed === state.safeCells) handleGridClear();
     return;
   }
   if (a.mines.length > 0) {
@@ -1024,9 +1182,17 @@ function aiBlackICE(a) {
     const batch = a.mines.slice(0, 3);
     batch.forEach(([r, c]) => {
       const cell = state.board[r][c];
-      if (!cell.flagged) { cell.flagged = true; state.flagged++; }
+      if (!cell.flagged) {
+        cell.flagged = true;
+        state.flagged++;
+        if (!cell.flagScored) {
+          cell.flagScored = true;
+          state.score += SCORING.correctFlag;
+        }
+      }
       refreshCell(r, c);
     });
+    updateScoreDisplay();
     $('#hud-flags').textContent = state.flagged;
     addAiMessage(`Flagged ${batch.length} ICE node(s).`);
     return;
@@ -1045,13 +1211,19 @@ function aiBlackICE(a) {
       getCellEl(r, c).classList.add('mine-trigger');
       refreshCell(r, c);
       addAiMessage("Hit ICE. Bad luck.");
-      gameEnd(false, r, c);
+      handleBombHit();
     } else {
+      const beforeRevealed = state.revealed;
       reveal(r, c);
       state.revealed = countRevealed();
+      const nodesProbed = state.revealed - beforeRevealed;
+      state.score += nodesProbed * SCORING.probeNode;
+      state.totalProbed += nodesProbed;
+      updateScoreDisplay();
       $('#hud-probed').textContent = state.revealed;
       addAiMessage(`Probed [${r},${c}]. Clear.`);
-      if (state.revealed === state.safeCells) gameEnd(true);
+      if (nodesProbed > 0) showScorePopup(nodesProbed * SCORING.probeNode);
+      if (state.revealed === state.safeCells) handleGridClear();
     }
     return;
   }
